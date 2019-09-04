@@ -1,0 +1,3 @@
+(fp_lib_table
+  (lib (name RV-8564-C2)(type KiCad)(uri ${KIPRJMOD}/RV-8564-C2.pretty)(options "")(descr ""))
+)
