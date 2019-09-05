@@ -27,16 +27,59 @@ volatile uint8_t seconds = 0;	// BCD
 // setup mode or clock mode
 volatile ClockMode mode = MODE_CLOCK;
 
+#define MAX_BRIGHTNESS 64
+#define MIN_BRIGHTNESS 2
+
 // digit display
 volatile uint8_t blink = 255; // which digit blinks, set to > 3 for none
-volatile uint8_t bright = 16; // current brightness of display
+volatile uint8_t bright = MAX_BRIGHTNESS; // current brightness of display
+volatile uint8_t min_bright = MIN_BRIGHTNESS;
 volatile uint8_t current_digit = 0; // which digit we are updating currently
 volatile uint8_t digit_timer = 0;   // timing for the current digit, each digit is repeated 16 times until we switch to the next one
 
 volatile uint8_t iter = 0;		// every time we switch to the next digit we increment this one, used for debouncing buttons
 volatile uint16_t frame = 0;	// every time we updated all 4 digits we increment this, used for fade out effect
 
-#define REFRESH_RATE 60			// how often we refresh all digits per second
+#define REFRESH_RATE 120		// how often we refresh all digits per second
+
+static void update_min_bright() {
+	switch (hours) {
+		case 0x23:
+		case 0x00:
+		case 0x01:
+		case 0x02:
+		case 0x03:
+		case 0x04:
+		case 0x05:
+		case 0x06:
+		case 0x07:
+			min_bright = MIN_BRIGHTNESS;
+			break;
+		case 0x08:
+		case 0x09:
+		case 0x20:
+		case 0x21:
+		case 0x22:
+			min_bright = MAX_BRIGHTNESS / 2;
+			break;
+		case 0x10:
+		case 0x11:
+		case 0x12:
+		case 0x13:
+		case 0x14:
+		case 0x15:
+		case 0x16:
+		case 0x17:
+		case 0x18:
+		case 0x19:
+			min_bright = MAX_BRIGHTNESS;
+			break;
+	}
+
+	if (bright < min_bright) {
+		bright = min_bright;
+	}
+}
 
 static inline void display_number(uint8_t number) {
 	// clear segment number
@@ -81,6 +124,8 @@ static inline void load_time() {
 	minutes = i2c_read(false) & 0x7f;
 	hours = i2c_read(true) & 0x3f;
 	i2c_stop();
+
+	update_min_bright();
 }
 
 static inline void save_time() {
@@ -99,7 +144,7 @@ static inline void handle_buttons(uint8_t left_down, uint8_t right_down) {
 		if (mode == MODE_CLOCK) {
 			blink = 0;
 			mode = MODE_PROGRAMMING;
-			bright = 16;
+			bright = MAX_BRIGHTNESS;
 		} else {
 			blink = 255;
 			seconds = 0;
@@ -115,7 +160,7 @@ static inline void handle_buttons(uint8_t left_down, uint8_t right_down) {
 			}
 		} else {
 			frame = 0;
-			bright = 16;
+			bright = MAX_BRIGHTNESS;
 		}
 	}
 	if ((right_down > 15) && ((PINB & 0x10) > 0)) {
@@ -151,7 +196,7 @@ static inline void handle_buttons(uint8_t left_down, uint8_t right_down) {
 			}
 		} else {
 			frame = 0;
-			bright = 16;
+			bright = MAX_BRIGHTNESS;
 		}
 	}
 }
@@ -197,6 +242,8 @@ static inline void carry_time() {
 	if (hours > 0x23) {
 		hours = 0;
 	}
+
+	update_min_bright();
 }
 
 int main(void) {
@@ -208,6 +255,10 @@ int main(void) {
 	
 	// pullups for PORTB 3 and 4
 	PORTB = 0x18;
+
+	// update clock divisor
+	CLKPR = 0x80;	// enable clockdiv set
+	CLKPR = 0x00;	// set divisor to 1
 
 	// enable rising edge interrupt on INT0
 	MCUCR = (1 << ISC01) | (1 << ISC00);
@@ -223,7 +274,7 @@ int main(void) {
 	start_clock();
 	
 	// setup timer for display refresh
-	OCR1A = F_CPU / (REFRESH_RATE * 4) / 16;	// count up to here
+	OCR1A = F_CPU / (REFRESH_RATE * 4) / MAX_BRIGHTNESS;	// count up to here
 	TCCR1A = 0x00;	// CTC mode
 	TCCR1B = (1 << WGM12) | (1 << CS10); // CTC Mode, clk, start timer
 	TIFR |= (1 << OCF1A);
@@ -252,10 +303,10 @@ int main(void) {
 		if ((frame >= REFRESH_RATE * 2) && (frame != old_frame)) {
 			old_frame = frame;
 			
-			if ((mode == MODE_CLOCK) && (bright > 2) && (frame % 10 == 0)) {
+			if ((mode == MODE_CLOCK) && (bright > min_bright) && (frame % 10 == 0)) {
 				// if we are not at minimum fade a little more
 				bright -= 1;
-			} else if ((mode == MODE_CLOCK) && (bright == 2)) {
+			} else if ((mode == MODE_CLOCK) && (bright == min_bright)) {
 				// at minimum, reset frame counter
 				frame = 0;
 			}
@@ -281,7 +332,7 @@ ISR(TIMER1_COMPA_vect) {
 	}
 	
 	// switch to next digit after 16 iterations
-	if (digit_timer > 16) {
+	if (digit_timer > MAX_BRIGHTNESS) {
 		digit_timer = 0;
 
 		current_digit++;
