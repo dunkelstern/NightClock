@@ -10,3 +10,5 @@ Atmel Studio/.vs/
 *.lst
 *.o
 *.d
+*.srec
+Atmel Studio/Clock/Release/
