@@ -1,3 +1,12 @@
 *.kicad_pcb-bak
 fp-info-cache
 Atmel Studio/.vs/
+
+*.eep
+*.elf
+*.lss
+*.map
+*.sym
+*.lst
+*.o
+*.d
